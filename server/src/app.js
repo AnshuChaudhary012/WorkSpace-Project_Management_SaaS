@@ -13,11 +13,16 @@ const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (like mobile apps, curl, postman) or matching client
-      if (!origin || origin === clientUrl || origin.startsWith('http://localhost:')) {
+      // Allow requests with no origin (like mobile apps, curl, postman) or matching client or Vercel preview/production
+      if (
+        !origin ||
+        origin === clientUrl ||
+        origin.startsWith('http://localhost:') ||
+        origin.endsWith('.vercel.app')
+      ) {
         return callback(null, true);
       }
-      return callback(null, true); // Dev-friendly permissive CORS
+      return callback(null, true); // Permissive CORS
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
