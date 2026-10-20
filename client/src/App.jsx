@@ -8,6 +8,8 @@ import RegisterPage from './pages/RegisterPage';
 import DashboardPage from './pages/DashboardPage';
 import ProjectsPage from './pages/ProjectsPage';
 import ProjectDetailPage from './pages/ProjectDetailPage';
+import MembersPage from './pages/MembersPage';
+import SettingsPage from './pages/SettingsPage';
 
 export function App() {
   return (
@@ -24,6 +26,8 @@ export function App() {
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/projects" element={<ProjectsPage />} />
               <Route path="/projects/:projectId" element={<ProjectDetailPage />} />
+              <Route path="/members" element={<MembersPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
             </Route>
           </Route>
 

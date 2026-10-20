@@ -10,6 +10,8 @@ import {
   Briefcase,
   Hash,
   ShieldAlert,
+  Users,
+  Settings,
   X
 } from 'lucide-react';
 
@@ -143,6 +145,14 @@ export const Sidebar = ({
             <NavLink to="/projects" className={navClass}>
               <FolderKanban className="w-4 h-4" />
               <span>All Projects</span>
+            </NavLink>
+            <NavLink to="/members" className={navClass}>
+              <Users className="w-4 h-4" />
+              <span>Members</span>
+            </NavLink>
+            <NavLink to="/settings" className={navClass}>
+              <Settings className="w-4 h-4" />
+              <span>Settings</span>
             </NavLink>
           </div>
 

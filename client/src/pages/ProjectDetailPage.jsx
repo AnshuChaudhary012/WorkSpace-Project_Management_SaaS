@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useOutletContext } from 'react-router-dom';
 import {
   Kanban,
   List as ListIcon,
@@ -8,18 +8,18 @@ import {
   Filter,
   Calendar,
   Flag,
-  MoreVertical,
   Trash2,
   Edit2,
   CheckCircle2,
-  Clock,
-  AlertCircle,
   Loader2,
-  ArrowRight
+  User,
+  MessageSquare
 } from 'lucide-react';
 import projectService from '../services/projectService';
 import taskService from '../services/taskService';
+import memberService from '../services/memberService';
 import TaskModal from '../components/TaskModal';
+import TaskDetailModal from '../components/TaskDetailModal';
 
 const COLUMNS = [
   { id: 'todo', label: 'To Do', color: 'bg-slate-500/10 text-slate-400 border-slate-700/50' },
@@ -38,44 +38,50 @@ const PRIORITY_BADGES = {
 export const ProjectDetailPage = () => {
   const { projectId } = useParams();
   const navigate = useNavigate();
+  const { currentWorkspace } = useOutletContext();
 
   const [project, setProject] = useState(null);
   const [tasks, setTasks] = useState([]);
+  const [members, setMembers] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [viewMode, setViewMode] = useState('kanban'); // 'kanban' or 'list'
+
+  // Drag-and-drop state
+  const [dragOverCol, setDragOverCol] = useState(null);
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [priorityFilter, setPriorityFilter] = useState('all');
 
   // Modal state
-  const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
-  const [taskToEdit, setTaskToEdit] = useState(null);
+  const [isCreateTaskModalOpen, setIsCreateTaskModalOpen] = useState(false);
+  const [selectedTaskForDetail, setSelectedTaskForDetail] = useState(null);
 
   const loadProjectAndTasks = useCallback(async () => {
     try {
       setIsLoading(true);
-      const [projData, tasksData] = await Promise.all([
+      const [projData, tasksData, membersData] = await Promise.all([
         projectService.getProjectById(projectId),
-        taskService.getTasks(projectId)
+        taskService.getTasks(projectId),
+        currentWorkspace?.id ? memberService.getMembers(currentWorkspace.id) : []
       ]);
       setProject(projData);
       setTasks(tasksData);
+      setMembers(membersData);
     } catch (err) {
       console.error('Failed to load project details:', err);
     } finally {
       setIsLoading(false);
     }
-  }, [projectId]);
+  }, [projectId, currentWorkspace]);
 
   useEffect(() => {
     loadProjectAndTasks();
   }, [loadProjectAndTasks]);
 
-  // Handle quick status move from Kanban card
+  // Handle quick status move / Drag-and-drop persistence
   const handleStatusChange = async (taskId, newStatus) => {
     try {
-      // Optimistic UI update
       setTasks((prev) =>
         prev.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t))
       );
@@ -86,10 +92,12 @@ export const ProjectDetailPage = () => {
     }
   };
 
-  const handleDeleteTask = async (taskId) => {
+  const handleDeleteTask = async (taskId, e) => {
+    if (e) e.stopPropagation();
     if (!window.confirm('Are you sure you want to delete this task?')) return;
     try {
       setTasks((prev) => prev.filter((t) => t.id !== taskId));
+      if (selectedTaskForDetail?.id === taskId) setSelectedTaskForDetail(null);
       await taskService.deleteTask(taskId);
     } catch (err) {
       console.error('Failed to delete task:', err);
@@ -97,18 +105,32 @@ export const ProjectDetailPage = () => {
     }
   };
 
-  const handleOpenEditModal = (task) => {
-    setTaskToEdit(task);
-    setIsTaskModalOpen(true);
+  const handleCardClick = (task) => {
+    setSelectedTaskForDetail(task);
   };
 
-  const handleOpenCreateModal = () => {
-    setTaskToEdit(null);
-    setIsTaskModalOpen(true);
+  const handleTaskUpdatedInDetail = (updated) => {
+    setTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+    setSelectedTaskForDetail(updated);
   };
 
-  const handleTaskSaved = () => {
-    loadProjectAndTasks();
+  // Drag events
+  const onDragStart = (e, taskId) => {
+    e.dataTransfer.setData('text/plain', taskId);
+  };
+
+  const onDragOver = (e, colId) => {
+    e.preventDefault();
+    if (dragOverCol !== colId) setDragOverCol(colId);
+  };
+
+  const onDrop = (e, colId) => {
+    e.preventDefault();
+    setDragOverCol(null);
+    const taskId = e.dataTransfer.getData('text/plain');
+    if (taskId) {
+      handleStatusChange(taskId, colId);
+    }
   };
 
   // Filter tasks based on search and priority
@@ -193,7 +215,7 @@ export const ProjectDetailPage = () => {
           </div>
 
           <button
-            onClick={handleOpenCreateModal}
+            onClick={() => setIsCreateTaskModalOpen(true)}
             className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium shadow-md shadow-indigo-600/25 transition-all"
           >
             <Plus className="w-4 h-4" />
@@ -236,15 +258,23 @@ export const ProjectDetailPage = () => {
 
       {/* View Content */}
       {viewMode === 'kanban' ? (
-        /* Kanban Board View */
+        /* Interactive Drag-and-Drop Kanban Board View */
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 items-start">
           {COLUMNS.map((col) => {
             const columnTasks = filteredTasks.filter((t) => t.status === col.id);
+            const isTarget = dragOverCol === col.id;
 
             return (
               <div
                 key={col.id}
-                className="glass-panel p-3.5 rounded-2xl border border-slate-800/80 flex flex-col min-h-[500px]"
+                onDragOver={(e) => onDragOver(e, col.id)}
+                onDragLeave={() => setDragOverCol(null)}
+                onDrop={(e) => onDrop(e, col.id)}
+                className={`glass-panel p-3.5 rounded-2xl border transition-all flex flex-col min-h-[500px] ${
+                  isTarget
+                    ? 'border-indigo-500 bg-indigo-500/5 ring-2 ring-indigo-500/20'
+                    : 'border-slate-800/80'
+                }`}
               >
                 {/* Column Header */}
                 <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-800/80">
@@ -255,7 +285,7 @@ export const ProjectDetailPage = () => {
                     </span>
                   </div>
                   <button
-                    onClick={handleOpenCreateModal}
+                    onClick={() => setIsCreateTaskModalOpen(true)}
                     className="p-1 rounded-md text-slate-500 hover:text-slate-300 hover:bg-slate-800 transition-colors"
                     title={`Add task to ${col.label}`}
                   >
@@ -267,34 +297,28 @@ export const ProjectDetailPage = () => {
                 <div className="flex-1 space-y-3">
                   {columnTasks.length === 0 ? (
                     <div className="h-28 flex flex-col items-center justify-center border border-dashed border-slate-800/60 rounded-xl text-slate-500 text-xs">
-                      <span className="text-[11px]">No tasks</span>
+                      <span className="text-[11px]">Drop tasks here</span>
                     </div>
                   ) : (
                     columnTasks.map((task) => (
                       <div
                         key={task.id}
-                        className="group p-3.5 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 transition-all shadow-sm hover:shadow-md"
+                        draggable
+                        onDragStart={(e) => onDragStart(e, task.id)}
+                        onClick={() => handleCardClick(task)}
+                        className="group p-3.5 rounded-xl bg-slate-900 border border-slate-800 hover:border-indigo-500/50 cursor-pointer transition-all shadow-sm hover:shadow-indigo-500/5"
                       >
                         <div className="flex items-start justify-between gap-2 mb-2">
                           <h4 className="text-xs font-medium text-slate-100 group-hover:text-indigo-300 transition-colors leading-snug">
                             {task.title}
                           </h4>
-                          <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
-                            <button
-                              onClick={() => handleOpenEditModal(task)}
-                              className="p-1 text-slate-400 hover:text-indigo-400"
-                              title="Edit Task"
-                            >
-                              <Edit2 className="w-3 h-3" />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteTask(task.id)}
-                              className="p-1 text-slate-400 hover:text-rose-400"
-                              title="Delete Task"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                          </div>
+                          <button
+                            onClick={(e) => handleDeleteTask(task.id, e)}
+                            className="p-1 text-slate-500 hover:text-rose-400 opacity-60 group-hover:opacity-100 transition-opacity"
+                            title="Delete Task"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
                         </div>
 
                         {task.description && (
@@ -312,17 +336,31 @@ export const ProjectDetailPage = () => {
                             {PRIORITY_BADGES[task.priority]?.label || task.priority}
                           </span>
 
-                          {task.dueDate && (
-                            <span className="flex items-center gap-1 text-slate-400">
-                              <Calendar className="w-3 h-3" />
-                              <span>{new Date(task.dueDate).toLocaleDateString()}</span>
-                            </span>
-                          )}
+                          <div className="flex items-center gap-2">
+                            {task.assignee && (
+                              <div
+                                className="w-5 h-5 rounded-full bg-indigo-500/20 text-indigo-300 flex items-center justify-center text-[9px] font-bold"
+                                title={`Assigned to ${task.assignee.name || 'member'}`}
+                              >
+                                {task.assignee.name ? task.assignee.name[0].toUpperCase() : 'A'}
+                              </div>
+                            )}
+
+                            {task.dueDate && (
+                              <span className="flex items-center gap-1 text-slate-400">
+                                <Calendar className="w-3 h-3" />
+                                <span>{new Date(task.dueDate).toLocaleDateString()}</span>
+                              </span>
+                            )}
+                          </div>
                         </div>
 
                         {/* Status Mover Quick Selector */}
-                        <div className="mt-2.5 pt-2 border-t border-slate-800/50 flex items-center justify-between text-[10px] text-slate-500">
-                          <span>Move to:</span>
+                        <div
+                          onClick={(e) => e.stopPropagation()}
+                          className="mt-2.5 pt-2 border-t border-slate-800/50 flex items-center justify-between text-[10px] text-slate-500"
+                        >
+                          <span>Move:</span>
                           <select
                             value={task.status}
                             onChange={(e) => handleStatusChange(task.id, e.target.value)}
@@ -351,6 +389,7 @@ export const ProjectDetailPage = () => {
                 <th className="py-3 px-4">Task</th>
                 <th className="py-3 px-4">Status</th>
                 <th className="py-3 px-4">Priority</th>
+                <th className="py-3 px-4">Assignee</th>
                 <th className="py-3 px-4">Due Date</th>
                 <th className="py-3 px-4 text-right">Actions</th>
               </tr>
@@ -358,20 +397,24 @@ export const ProjectDetailPage = () => {
             <tbody className="divide-y divide-slate-800/60 text-slate-200">
               {filteredTasks.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="py-8 text-center text-slate-500">
+                  <td colSpan={6} className="py-8 text-center text-slate-500">
                     No tasks match the selected filters.
                   </td>
                 </tr>
               ) : (
                 filteredTasks.map((task) => (
-                  <tr key={task.id} className="hover:bg-slate-900/40 transition-colors">
+                  <tr
+                    key={task.id}
+                    onClick={() => handleCardClick(task)}
+                    className="hover:bg-slate-900/40 cursor-pointer transition-colors"
+                  >
                     <td className="py-3 px-4">
                       <p className="font-medium text-slate-100">{task.title}</p>
                       {task.description && (
                         <p className="text-[11px] text-slate-400 line-clamp-1">{task.description}</p>
                       )}
                     </td>
-                    <td className="py-3 px-4">
+                    <td className="py-3 px-4" onClick={(e) => e.stopPropagation()}>
                       <select
                         value={task.status}
                         onChange={(e) => handleStatusChange(task.id, e.target.value)}
@@ -392,26 +435,20 @@ export const ProjectDetailPage = () => {
                         {PRIORITY_BADGES[task.priority]?.label || task.priority}
                       </span>
                     </td>
+                    <td className="py-3 px-4 text-slate-300">
+                      {task.assignee?.name || 'Unassigned'}
+                    </td>
                     <td className="py-3 px-4 text-slate-400">
                       {task.dueDate ? new Date(task.dueDate).toLocaleDateString() : '—'}
                     </td>
-                    <td className="py-3 px-4 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => handleOpenEditModal(task)}
-                          className="p-1.5 text-slate-400 hover:text-indigo-400 hover:bg-slate-800 rounded-lg transition-colors"
-                          title="Edit Task"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteTask(task.id)}
-                          className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors"
-                          title="Delete Task"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                    <td className="py-3 px-4 text-right" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={(e) => handleDeleteTask(task.id, e)}
+                        className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors"
+                        title="Delete Task"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </td>
                   </tr>
                 ))
@@ -421,13 +458,21 @@ export const ProjectDetailPage = () => {
         </div>
       )}
 
-      {/* Task Modal */}
+      {/* Create Task Modal */}
       <TaskModal
-        isOpen={isTaskModalOpen}
+        isOpen={isCreateTaskModalOpen}
         projectId={projectId}
-        taskToEdit={taskToEdit}
-        onClose={() => setIsTaskModalOpen(false)}
-        onSaved={handleTaskSaved}
+        onClose={() => setIsCreateTaskModalOpen(false)}
+        onSaved={loadProjectAndTasks}
+      />
+
+      {/* Detailed Task & Discussion Modal */}
+      <TaskDetailModal
+        isOpen={!!selectedTaskForDetail}
+        task={selectedTaskForDetail}
+        members={members}
+        onClose={() => setSelectedTaskForDetail(null)}
+        onTaskUpdated={handleTaskUpdatedInDetail}
       />
     </div>
   );

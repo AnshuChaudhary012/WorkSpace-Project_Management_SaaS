@@ -39,9 +39,18 @@ const getTasks = async (req, res, next) => {
       // Sort by order ascending, then createdAt descending
       filtered.sort((a, b) => (a.order || 0) - (b.order || 0) || new Date(b.createdAt) - new Date(a.createdAt));
 
+      const { devUserStore } = require('./authController');
+      const populated = filtered.map((t) => {
+        const u = t.assignee ? (devUserStore || []).find((user) => user.id === t.assignee) : null;
+        return {
+          ...t,
+          assignee: u ? { id: u.id, name: u.name, email: u.email, avatarUrl: u.avatarUrl } : null
+        };
+      });
+
       return res.status(200).json({
         success: true,
-        data: filtered
+        data: populated
       });
     }
 
