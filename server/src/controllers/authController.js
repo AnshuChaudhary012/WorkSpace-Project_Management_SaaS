@@ -1,5 +1,12 @@
 const User = require('../models/User');
 const { generateToken } = require('../utils/token');
+const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
+
+// Standalone in-memory fallback store for development when MongoDB is not running locally
+const devUserStore = [];
+
+const isDbConnected = () => mongoose.connection.readyState === 1;
 
 // @desc    Register a new user
 // @route   POST /api/auth/register
@@ -7,6 +14,42 @@ const { generateToken } = require('../utils/token');
 const register = async (req, res, next) => {
   try {
     const { name, email, password } = req.body;
+
+    if (!isDbConnected()) {
+      const existing = devUserStore.find((u) => u.email === email.toLowerCase());
+      if (existing) {
+        return res.status(409).json({
+          success: false,
+          message: 'An account with this email address already exists.'
+        });
+      }
+      const salt = await bcrypt.genSalt(10);
+      const passwordHash = await bcrypt.hash(password, salt);
+      const newUser = {
+        id: `usr_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        name,
+        email: email.toLowerCase(),
+        passwordHash,
+        avatarUrl: '',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        toJSON: function () {
+          const { passwordHash: _, ...rest } = this;
+          return rest;
+        }
+      };
+      devUserStore.push(newUser);
+      const token = generateToken(newUser);
+
+      return res.status(201).json({
+        success: true,
+        message: 'Account created successfully (standalone dev mode).',
+        data: {
+          user: newUser.toJSON(),
+          token
+        }
+      });
+    }
 
     const existingUser = await User.findOne({ email });
     if (existingUser) {
@@ -43,6 +86,32 @@ const register = async (req, res, next) => {
 const login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
+
+    if (!isDbConnected()) {
+      const user = devUserStore.find((u) => u.email === email.toLowerCase());
+      if (!user) {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid email or password.'
+        });
+      }
+      const isMatch = await bcrypt.compare(password, user.passwordHash);
+      if (!isMatch) {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid email or password.'
+        });
+      }
+      const token = generateToken(user);
+      return res.status(200).json({
+        success: true,
+        message: 'Login successful.',
+        data: {
+          user: user.toJSON(),
+          token
+        }
+      });
+    }
 
     // Must explicitly select passwordHash since select: false on schema
     const user = await User.findOne({ email }).select('+passwordHash');
@@ -84,7 +153,7 @@ const getMe = async (req, res, next) => {
     res.status(200).json({
       success: true,
       data: {
-        user: req.user.toJSON()
+        user: req.user.toJSON ? req.user.toJSON() : req.user
       }
     });
   } catch (error) {
@@ -110,5 +179,6 @@ module.exports = {
   register,
   login,
   getMe,
-  logout
+  logout,
+  devUserStore
 };

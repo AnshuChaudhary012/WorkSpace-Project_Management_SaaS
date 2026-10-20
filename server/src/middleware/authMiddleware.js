@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const User = require('../models/User');
 const { verifyToken } = require('../utils/token');
 
@@ -17,7 +18,14 @@ const authenticate = async (req, res, next) => {
     }
 
     const decoded = verifyToken(token);
-    const user = await User.findById(decoded.id);
+    let user;
+
+    if (mongoose.connection.readyState === 1) {
+      user = await User.findById(decoded.id);
+    } else {
+      const { devUserStore } = require('../controllers/authController');
+      user = devUserStore.find((u) => u.id === decoded.id);
+    }
 
     if (!user) {
       return res.status(401).json({

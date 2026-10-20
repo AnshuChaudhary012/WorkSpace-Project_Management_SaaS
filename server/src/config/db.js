@@ -3,7 +3,9 @@ const mongoose = require('mongoose');
 const connectDB = async (uri) => {
   const dbUri = uri || process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/workspace_saas';
   try {
-    const conn = await mongoose.connect(dbUri);
+    const conn = await mongoose.connect(dbUri, {
+      serverSelectionTimeoutMS: 2500, // Quick 2.5s timeout if MongoDB is not reachable
+    });
     console.log(`[Database] MongoDB connected successfully: ${conn.connection.host}`);
     return conn;
   } catch (error) {
