@@ -1,0 +1,18 @@
+const mongoose = require('mongoose');
+
+const connectDB = async (uri) => {
+  const dbUri = uri || process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/workspace_saas';
+  try {
+    const conn = await mongoose.connect(dbUri);
+    console.log(`[Database] MongoDB connected successfully: ${conn.connection.host}`);
+    return conn;
+  } catch (error) {
+    console.error(`[Database] MongoDB connection error: ${error.message}`);
+    if (process.env.NODE_ENV !== 'test') {
+      console.warn('[Database] Continuing without local MongoDB. For full functionality, ensure MongoDB is running locally or provide MONGODB_URI in .env');
+    }
+    throw error;
+  }
+};
+
+module.exports = connectDB;

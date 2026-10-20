@@ -1,0 +1,14 @@
+{
+  "name": "workspace-saas",
+  "version": "1.0.0",
+  "description": "WorkSpace - Project Management SaaS inspired by Trello and Linear",
+  "scripts": {
+    "dev:server": "npm --prefix server run dev",
+    "dev:client": "npm --prefix client run dev",
+    "test:server": "npm --prefix server test",
+    "build:client": "npm --prefix client run build"
+  },
+  "keywords": ["workspace", "saas", "project-management", "linear", "trello", "kanban"],
+  "author": "",
+  "license": "ISC"
+}
